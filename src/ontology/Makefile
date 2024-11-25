@@ -723,7 +723,12 @@ mirror-hgnc: mirror/hgnc_gene.nt | $(TMPDIR)
 	if [ $(MIR) = true ] && [ $(IMP) = true ]; then $(ROBOT) merge -i $< \
 		query --format ttl --query ../sparql/construct/construct-hgnc.sparql $(TMPDIR)/$@.owl; fi
 
-mirror-ncbigene: mirror/ncbi_gene.nt | $(TMPDIR)
+../sparql/construct/construct-ncbigene.sparql: ../sparql/construct/construct-ncbigene.sparql.template $(IMPORTDIR)/merged_terms_combined.txt
+	@awk '{print "    <" $$0 ">"}' $(IMPORTDIR)/merged_terms_combined.txt | grep ncbigene | paste -sd '\n' > $(TMPDIR)/formatted_values.tmp
+	@sed "/{{VALUES}}/r $(TMPDIR)/formatted_values.tmp" $< | sed '/{{VALUES}}/d' > $@
+	@rm "$(TMPDIR)/formatted_values.tmp"
+
+mirror-ncbigene: mirror/ncbi_gene.nt ../sparql/construct/construct-ncbigene.sparql | $(TMPDIR)
 	if [ $(MIR) = true ] && [ $(IMP) = true ]; then arq --data=mirror/ncbi_gene.nt --query=../sparql/construct/construct-ncbigene.sparql > $(TMPDIR)/$@.owl; fi
 
 
@@ -1291,7 +1296,12 @@ check: mondo-edit.obo
 	 ../utils/quick-check.pl $<
 
 mondo-edit.owl: mondo-edit.obo
-	../utils/quick-check.pl $< && $(ROBOT) convert -i $< -o $@
+	$(ROBOT) convert -i $< -o $@
+
+quickcheck: mondo-edit.obo
+	../utils/quick-check.pl $<
+
+test: quickcheck
 
 d2taxon-wd.tsv:
 	pq-wd -f tsv  "has_cause(D,T),doid_id(D,DX),ncbitaxon_id(T,TX)" "x(DX,TX)" > $@.tmp && perl -npe 's@\t@\tNCBITaxon:@' $@.tmp > $@
