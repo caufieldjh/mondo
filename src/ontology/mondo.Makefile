@@ -75,7 +75,6 @@ pattern_ontology: ../patterns/pattern.owl
 	filter --select "<http://purl.obolibrary.org/obo/mondo/patterns*>" --select "self annotations" --signature true --trim true -o ../patterns/pattern-simple.owl
 
 ../patterns/dosdp-patterns/README.md: .FORCE
-	pip install tabulate
 	python ../scripts/patterns_create_overview.py "../patterns/dosdp-patterns" "../patterns/data/matches" $@
 
 pattern_readmes: ../patterns/dosdp-patterns/README.md
@@ -451,6 +450,31 @@ update-rare-subset:
 ######################################################
 
 ####################################
+##### OMIM #####################
+####################################
+
+$(TMPDIR)/mondo-genes-axioms.owl: $(SRC)
+	$(ROBOT) filter --input $(SRC) \
+		--term RO:0004003 \
+		--axioms SubClassOf \
+		--preserve-structure false \
+		--trim false \
+		--drop-axiom-annotations "oboInOwl:source=~'(OMIM):.*'" \
+		-o $@
+
+
+.PHONY: update-omim-genes
+update-omim-genes:
+	$(MAKE) $(TMPDIR)/external/processed-mondo-omim-genes.robot.owl $(TMPDIR)/mondo-genes-axioms.owl -B
+	# We need to be less aggressive here, as some gene relations were not originally sourced
+	# from OMIM, and were added, for example, for ClinGen.
+	$(ROBOT) remove -i $(SRC) --term RO:0004003 --axioms SubClassOf --preserve-structure false --trim true \
+		merge -i $(TMPDIR)/external/processed-mondo-omim-genes.robot.owl -i $(TMPDIR)/mondo-genes-axioms.owl --collapse-import-closure false \
+		query --update ../sparql/update/omim-gene-equivalence.ru \
+		convert -f obo --check false -o $(SRC).obo
+	mv $(SRC).obo $(SRC) && make NORM && mv NORM $(SRC)
+
+####################################
 ##### Orphanet #####################
 ####################################
 
@@ -536,7 +560,7 @@ subset-metrics:
 
 SOURCE_VERSION = $(TODAY)
 # snomed
-SOURCE_IDS = doid ncit ordo omim gard
+SOURCE_IDS = doid ncit ordo omim
 SOURCE_IDS_INCL_MONDO = $(SOURCE_IDS) mondo equivalencies
 ALL_SOURCES_JSON = $(patsubst %, sources/$(SOURCE_VERSION)/%.json, $(SOURCE_IDS_INCL_MONDO))
 ALL_SOURCES_JSON_GZ = $(patsubst %, sources/$(SOURCE_VERSION)/%.json.gz, $(SOURCE_IDS_INCL_MONDO))
@@ -1058,6 +1082,8 @@ deprecated_annotation_merging:
 	sed -i 's/source="MONDO:equivalentObsolete",\ source="MONDO:obsoleteEquivalentObsolete"/source="MONDO:obsoleteEquivalentObsolete"/g' mondo-edit.obo || true
 	sed -i 's/source="MONDO:equivalentObsolete",\ source="MONDO:equivalentTo"/source="MONDO:equivalentObsolete"/g' mondo-edit.obo || true
 	sed -i 's/\(.*\)source="MONDO:equivalentObsolete"\(.*\)source="MONDO:obsoleteEquivalentObsolete"\(.*\)/\1source="MONDO:obsoleteEquivalentObsolete"\2\3/g' mondo-edit.obo || true
+	sed -i '/source="MONDO:equivalentObsolete"/ s/, source="MONDO:equivalentTo"//g' mondo-edit.obo || true
+	sed -i 's/source="MONDO:equivalentObsolete",\ source="MONDO:obsoleteEquivalent"/source="MONDO:obsoleteEquivalentObsolete"/g' mondo-edit.obo || true
 	sed -i 's/, }/}/g' mondo-edit.obo || true
 	sed -i 's/, ,/,/g' mondo-edit.obo || true
 	echo "NOTE: There are still some broken cases that need to be manually fixed. Search for `quivalent.*quivalent` (no E) in case sensitive regex mode in Atom or Visual Studio"
@@ -1255,17 +1281,6 @@ config/exclusion_reasons.tsv:
 	wget "https://docs.google.com/spreadsheets/d/e/2PACX-1vTuZlr1P4ZUwdEnet_wN0RShGa8_9MYX-dAFva_xslNuiDrLP_MuIXPu0rzClq-xZQ47QhqzK2p74AA/pub?gid=1644570180&single=true&output=tsv" -O $@
 
 all: config/exclusion_reasons.tsv
-
-##################################
-##### GH Actions for diff  #######
-##################################
-tmp/mondo-main-branch.obo:
-	wget https://raw.githubusercontent.com/monarch-initiative/mondo/master/src/ontology/mondo-edit.obo -O tmp/mondo-main-branch.obo && cp mondo-edit.obo tmp/mondo-base.obo
-
-diff-md: tmp/mondo-main-branch.obo
-	runoak -i simpleobo:tmp/mondo-main-branch.obo diff -X simpleobo:tmp/mondo-base.obo \
-	-o reports/difference_md.md --output-type md
-
 
 ##################################
 ##### Scheduled GH Actions #######
